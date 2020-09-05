@@ -282,7 +282,7 @@ vSEIDR_Data <- function(opendir, h, st,end){
   return(A1)
 }
 #------------- Minimum distance estimation of parameter pt------------
-pE <- function(eta,province,A,M,infect){
+pE <- function(eta,province,A,M,infect,duration = 14){
   p.E = eta
   R0 = 5.7 
   p.seq = p.E / 100 * exp(R0 / 14 * 1:14)
@@ -292,19 +292,19 @@ pE <- function(eta,province,A,M,infect){
   alpha0 = diff(A4$N[1:2]) / E0
   alpha1 = 1 / 3.5
   A4 = left_join(A4,A,by = c("date","province"))
-  t = ymd("20200123") + 1:28
-  pt = data.frame(date = t,pt = rep(0,28))
+  t = ymd("20200123") + 1:duration
+  pt = data.frame(date = t,pt = rep(0,duration))
   alpha = c(alpha0,cumsum(rep((alpha1 - alpha0)/14,14)) +alpha0)  #linearly increasing
   alpha = c(alpha,rep(alpha1,dim(A4)[1] - length(alpha)))
   
-  Coef = vSEIDR_Coef_new(A4 = A4,w = 7,D = 14,alpha = alpha,M = M,pt = pt,r = 5)
-  Coef.sim <- Coef %>% filter(date<=ymd("20200219"),date >= ymd("20200123"))
+  Coef = vSEIDR_Coef_new(A4 = A4,w = 5,D = 14,alpha = alpha,M = M,pt = pt,r = 5)
+  Coef.sim <- Coef %>% filter(date<=ymd("20200123") + duration - 1,date >= ymd("20200123"))
   sim = sim.vseidr.det(t_max = dim(Coef.sim)[1],pt = Coef.sim$pt,y = c(E0,Coef.sim$I[1],Coef.sim$R.d[1],Coef.sim$R.r[1]),
                        A = c(0,Coef.sim$A[-1]),alpha = Coef.sim$alpha,beta = Coef.sim$beta.hat, gamma.d  = Coef.sim$gamma.d,gamma.r = Coef.sim$gamma.r,M = M)
-  N.part = (Coef %>% filter(date<=ymd("20200220"),date >= ymd("20200124")))$N
+  N.part = (Coef %>% filter(date<=ymd("20200124") + duration - 1,date >= ymd("20200124")))$N
   mean((sim$N[-1] - N.part)^2)
 }
-fitting <- function(eta,province,A,M,infect){
+fitting <- function(eta,province,A,M,infect,duration = 14){
   p.E = eta
   R0 = 5.7 
   p.seq = p.E / 100 * exp(R0 / 14 * 1:14)
@@ -314,18 +314,18 @@ fitting <- function(eta,province,A,M,infect){
   alpha0 = diff(A4$N[1:2]) / E0
   alpha1 = 1 / 3.5
   A4 = left_join(A4,A,by = c("date","province"))
-  t = ymd("20200123") + 1:28
-  pt = data.frame(date = t,pt = rep(0,28))
+  t = ymd("20200123") + 1:duration
+  pt = data.frame(date = t,pt = rep(0,duration))
   alpha = c(alpha0,cumsum(rep((alpha1 - alpha0)/14,14)) +alpha0)  #linearly increasing
   alpha = c(alpha,rep(alpha1,dim(A4)[1] - length(alpha)))
   
-  Coef = vSEIDR_Coef_new(A4 = A4,w = 7,D = 14,alpha = alpha,M = M,pt = pt,r = 5)
-  Coef.sim <- Coef %>% filter(date<=ymd("20200219"),date >= ymd("20200123"))
+  Coef = vSEIDR_Coef_new(A4 = A4,w = 5,D = 14,alpha = alpha,M = M,pt = pt,r = 5)
+  Coef.sim <- Coef %>% filter(date<=ymd("20200123") + duration - 1,date >= ymd("20200123"))
   sim = sim.vseidr.det(t_max = dim(Coef.sim)[1],pt = Coef.sim$pt,y = c(E0,Coef.sim$I[1],Coef.sim$R.d[1],Coef.sim$R.r[1]),
                        A = c(0,Coef.sim$A[-1]),alpha = Coef.sim$alpha,beta = Coef.sim$beta.hat, gamma.d  = Coef.sim$gamma.d,gamma.r = Coef.sim$gamma.r,M = M)
-  N.part = (Coef %>% filter(date<=ymd("20200220"),date >= ymd("20200124")))$N
-  data1 = data.frame(date = ymd("20200124")+(0:27),N = sim$N[-1],province = province,type = "fitting")
-  data2 = data.frame(date = ymd("20200124")+(0:27),N = N.part,province = province,type = "observed")
+  N.part = (Coef %>% filter(date <= ymd("20200124") + duration - 1,date >= ymd("20200124")))$N
+  data1 = data.frame(date = ymd("20200124")+(0:(duration - 1)),N = sim$N[-1],province = province,type = "fitting")
+  data2 = data.frame(date = ymd("20200124")+(0:(duration - 1)),N = N.part,province = province,type = "observed")
   list(fitting = rbind(data1,data2),Coef = Coef)
 }
 
@@ -344,19 +344,19 @@ for(i in 1:length(provinces)){
   Infect.data = rbind(Infect.data,A4)
 }
 
-
+j = 28
 summary.pt <- foreach(i = 1:17, .combine = rbind) %dopar% {
   province.temp = provinces[i]
   population = population.all$population[population.all$city == province.temp] * 10000
   A = migration.2020 %>% mutate(province = as.character(province)) %>% filter(province == province.temp) %>% mutate(date = ymd(date))
   infect <- Infect.data %>% filter(province == province.temp)
   if(province.temp %in% c("Anhui","Chongqin","Fujian","Hunan","Jiangxi","Shaanxi")){
-    op = optimize(f = pE,interval = c(1/100000,1),province = province.temp,A = A,M = population,infect = infect)
+    op = optimize(f = pE,interval = c(1/100000,1),province = province.temp,A = A,M = population,infect = infect,duration = j)
     print(sqrt(op$objective))
     print(i)
   }
   else{
-    op = optimize(f = pE,interval = c(1/1000,1),province = province.temp,A = A,M = population,infect = infect)
+    op = optimize(f = pE,interval = c(1/1000,1),province = province.temp,A = A,M = population,infect = infect,duration = j)
     print(sqrt(op$objective))
     print(i)
   }
@@ -373,6 +373,52 @@ summary.pt <- foreach(i = 1:17, .combine = rbind) %dopar% {
                              alpha0 = alpha0)
   summary.temp
 }
+##Robustness
+for(j in 11:28){
+  print(paste0("loop:",j))
+  summary.pt <- foreach(i = 1:17, .combine = rbind) %dopar% {
+    province.temp = provinces[i]
+    population = population.all$population[population.all$city == province.temp] * 10000
+    A = migration.2020 %>% mutate(province = as.character(province)) %>% filter(province == province.temp) %>% mutate(date = ymd(date))
+    infect <- Infect.data %>% filter(province == province.temp)
+    if(province.temp %in% c("Anhui","Chongqin","Fujian","Hunan","Jiangxi","Shaanxi")){
+      op = optimize(f = pE,interval = c(1/100000,1),province = province.temp,A = A,M = population,infect = infect,duration = j)
+      print(sqrt(op$objective))
+      print(i)
+    }
+    else{
+      op = optimize(f = pE,interval = c(1/1000,1),province = province.temp,A = A,M = population,infect = infect,duration = j)
+      print(sqrt(op$objective))
+      print(i)
+    }
+    
+    N = (infect$N)[infect$date == ymd("20200315")]
+    Gof = sqrt(op$objective)
+    eta = op$minimum
+    R0 = 5.7
+    p.seq = eta / 100 * exp(R0 / 14 * 1:14)
+    A.seq = A %>% filter(date >= ymd("20200110"),date <= ymd("20200123")) %>% dplyr::select(daily_sum)
+    E0 = sum(floor(A.seq * p.seq))
+    alpha0 = diff(infect$N[1:2]) / E0
+    summary.temp <- data.frame(province = province.temp,Gof = Gof,E0 = E0,N = N,proportion = E0 / N,eta = eta, pt.max = max(p.seq),
+                               alpha0 = alpha0)
+    summary.temp
+  }
+  if(j == 11){
+    robust.check.E0 <- summary.pt %>% select(province,E0)
+    colnames(robust.check.E0)[2] = j
+  }
+  else{
+    temp <- summary.pt %>% select(province,E0)
+    colnames(temp)[2] = j
+    robust.check.E0 <- left_join(robust.check.E0, temp)
+  }
+}
+robust.check.melt <- melt(robust.check.E0,id.vars = "province",variable.name = "duration",value.name = "E0") %>% mutate(duration = as.integer(as.character(duration)))
+ggplot(robust.check.melt,aes(duration,E0))+ facet_wrap(~province,scales = "free") + geom_line()
+
+
+
 write.csv(summary.pt,"/Users/gujia/Documents/National Bureau of Statistics/Output/pt.csv")
   
 
@@ -436,11 +482,12 @@ ggsave(paste0(save.dir,"Rt.png"))
 
 #Bootstrapped CI for E0
 #Take Zhejiang for example
-i = 17
+i = 2
 province.temp <- as.character(summary.pt$province[i])
 population = population.all$population[population.all$city == province.temp] * 10000
 A = migration.2020 %>% mutate(province = as.character(province)) %>% filter(province == province.temp) %>% mutate(date = ymd(date))
 infect <- Infect.data %>% filter(province == province.temp)
+
 Boot.E0 <- function(eta,province,A,M,infect,B = 500){
   p.E = eta
   R0 = 5.7 
@@ -457,12 +504,17 @@ Boot.E0 <- function(eta,province,A,M,infect,B = 500){
   alpha = c(alpha,rep(alpha1,dim(A4)[1] - length(alpha)))
   Coef = vSEIDR_Coef_new(A4 = A4,w = 7,D = 14,alpha = alpha,M = M,pt = pt,r = 5)
   pt = data.frame(t = 1:(nrow(A4)-2),pt = rep(0,nrow(A4) - 2))
+  beta.boot <- foreach(i = 1:B,.combine = rbind) %dopar%{
   boot.i <- sim.vseidr(t_max = nrow(A4) -2,pt = pt,y = c(Coef$E[1],Coef$I[1],Coef$R.d[1],Coef$R.r[1]),alpha = Coef$alpha,
              beta = Coef$beta.hat,gamma.d = Coef$gamma.d,gamma.r = Coef$gamma.r,A = c(0,A$daily_sum[A$date >= ymd("20200124")]),r.beta = 5,M = M)
   boot.i <- rbind(boot.i,NA)
   boot.i$date = A4$date
   boot.i$province =  A4$province
-  vSEIDR_Coef(A4 = boot.i,w = 7,D = 14,alpha = Coef$alpha,M = M,r = 5)
+  Coef.i <- vSEIDR_Coef(A4 = boot.i,w = 7,D = 14,alpha = Coef$alpha,M = M,r = 5)
+  beta.i <- Coef.i$beta.hat
+  }
+  beta.boot = base::t(beta.boot) 
+  beta.center = beta.boot - rowMeans(beta.boot) + Coef$beta.hat
 }
 
 
